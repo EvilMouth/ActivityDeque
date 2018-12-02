@@ -2,20 +2,20 @@ package com.zyhang.activitydeque;
 
 import android.app.Activity;
 import android.app.Application;
+import android.content.Context;
 import android.content.Intent;
+import android.net.Uri;
 import android.os.Bundle;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 import java.lang.ref.WeakReference;
-import java.util.ArrayDeque;
-import java.util.Arrays;
-import java.util.Iterator;
-import java.util.List;
+import java.util.*;
 
 /**
  * Created by zyhang on 2018/12/1.21:59
  */
+@SuppressWarnings({"WeakerAccess", "unused"})
 public class ActivityDeque implements Application.ActivityLifecycleCallbacks {
 
     private Application application;
@@ -33,13 +33,25 @@ public class ActivityDeque implements Application.ActivityLifecycleCallbacks {
 
     /**
      * 已在ContentProvider初始化{@link ActivityDequeContentProvider#onCreate()}
-     * 如果项目需要支持多进程，请在自定义Application调用此方法
+     * 如果项目需要支持多进程，请在自定义Application调用{@link ActivityDeque#initMultiProcess(Context)}
      *
      * @param application {@link Application}
      */
-    public void init(Application application) {
+    void init(Application application) {
         this.application = application;
+        application.unregisterActivityLifecycleCallbacks(this);
         application.registerActivityLifecycleCallbacks(this);
+    }
+
+    /**
+     * 在Application初始化使ActivityDeque支持多线程
+     *
+     * @param context {@link Context}
+     */
+    public void initMultiProcess(Context context) throws NullPointerException {
+        Objects.requireNonNull(context.getContentResolver().query(
+                Uri.parse("content://" + context.getPackageName() + ".lifecycle-activity-deque"),
+                null, null, null, null)).close();
     }
 
     /**
@@ -95,7 +107,7 @@ public class ActivityDeque implements Application.ActivityLifecycleCallbacks {
         Activity top = getTopActivity();
         if (top != null) {
             top.startActivity(intent);
-        } else {
+        } else if (application != null) {
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             application.startActivity(intent);
         }
