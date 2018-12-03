@@ -1,14 +1,15 @@
-@file:Suppress("UNUSED_PARAMETER")
+@file:Suppress("UNUSED_PARAMETER", "unused")
 
 package com.zyhang.activitydeque.app
 
 import android.app.Activity
 import android.app.Application
 import android.content.Intent
-import androidx.appcompat.app.AppCompatActivity
 import android.os.Bundle
+import android.util.Log
 import android.view.View
 import android.widget.Toast
+import androidx.appcompat.app.AppCompatActivity
 import com.zyhang.activitydeque.ActivityDeque
 import com.zyhang.activitydeque.ActivityDequeDelegate
 import kotlinx.android.synthetic.main.activity_base.*
@@ -50,21 +51,38 @@ abstract class BaseActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_base)
 
-        showDeque()
-    }
-
-    override fun onNewIntent(intent: Intent?) {
-        super.onNewIntent(intent)
-        showDeque()
-    }
-
-    private fun showDeque() {
+        Log.i(javaClass.simpleName, "onCreate")
         val stringBuilder = StringBuilder()
         for (activity in ActivityDeque.getInstance().arrayDeque) {
             stringBuilder.append(activity.javaClass.simpleName)
             stringBuilder.append("\n")
         }
         textView.text = stringBuilder.toString()
+    }
+
+    override fun onStart() {
+        super.onStart()
+        Log.i(javaClass.simpleName, "onStart")
+    }
+
+    override fun onResume() {
+        super.onResume()
+        Log.i(javaClass.simpleName, "onResume")
+    }
+
+    override fun onPause() {
+        super.onPause()
+        Log.i(javaClass.simpleName, "onPause")
+    }
+
+    override fun onStop() {
+        super.onStop()
+        Log.i(javaClass.simpleName, "onStop")
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        Log.i(javaClass.simpleName, "onDestroy")
     }
 
     fun nextActivity(view: View) {
@@ -108,6 +126,6 @@ class ActivityFour : BaseActivity() {
 
 class ActivityFive : BaseActivity() {
     override fun nextActivity() {
-        Toast.makeText(this, "no next", Toast.LENGTH_SHORT).show();
+        Toast.makeText(this, "no next", Toast.LENGTH_SHORT).show()
     }
 }

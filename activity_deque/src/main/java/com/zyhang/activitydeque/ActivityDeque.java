@@ -1,5 +1,6 @@
 package com.zyhang.activitydeque;
 
+import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.app.Application;
 import android.content.Context;
@@ -10,15 +11,20 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 import java.lang.ref.WeakReference;
-import java.util.*;
+import java.util.ArrayDeque;
+import java.util.Arrays;
+import java.util.Iterator;
+import java.util.List;
 
 /**
  * Created by zyhang on 2018/12/1.21:59
  */
 @SuppressWarnings({"WeakerAccess", "unused"})
-public class ActivityDeque implements Application.ActivityLifecycleCallbacks {
+public class ActivityDeque {
 
+    private static final Object LOCK = new Object();
     private Application application;
+    private ActivityLifecycleCallback activityLifecycleCallback = new ActivityLifecycleCallback();
     private ActivityDequeDelegate activityDequeDelegate = new DefaultActivityDequeDelegate();
     private ArrayDeque<Activity> arrayDeque = new ArrayDeque<>();
     private WeakReference<Activity> currentActivityWeakReference;
@@ -39,8 +45,8 @@ public class ActivityDeque implements Application.ActivityLifecycleCallbacks {
      */
     void init(Application application) {
         this.application = application;
-        application.unregisterActivityLifecycleCallbacks(this);
-        application.registerActivityLifecycleCallbacks(this);
+        application.unregisterActivityLifecycleCallbacks(activityLifecycleCallback);
+        application.registerActivityLifecycleCallbacks(activityLifecycleCallback);
     }
 
     /**
@@ -48,10 +54,11 @@ public class ActivityDeque implements Application.ActivityLifecycleCallbacks {
      *
      * @param context {@link Context}
      */
-    public void initMultiProcess(Context context) throws NullPointerException {
-        Objects.requireNonNull(context.getContentResolver().query(
+    @SuppressLint("Recycle")
+    public void initMultiProcess(Context context) {
+        context.getContentResolver().query(
                 Uri.parse("content://" + context.getPackageName() + ".lifecycle-activity-deque"),
-                null, null, null, null)).close();
+                null, null, null, null);
     }
 
     /**
@@ -147,35 +154,41 @@ public class ActivityDeque implements Application.ActivityLifecycleCallbacks {
     /**
      * 重新创建所有Activity
      * 从栈底开始，保持重建后堆栈顺序一致
+     * recreate的Activity不会走onStop，当恢复的时候自然也不会走onStart
      *
      * @see Activity#recreate()
      */
     public void recreateAll() {
-        Iterator<Activity> iterator = arrayDeque.descendingIterator();
-        while (iterator.hasNext()) {
-            Activity activity = iterator.next();
-            iterator.remove();
-            activity.recreate();
+        synchronized (LOCK) {
+            Iterator<Activity> iterator = arrayDeque.descendingIterator();
+            while (iterator.hasNext()) {
+                Activity activity = iterator.next();
+                iterator.remove();
+                activity.recreate();
+            }
         }
     }
 
     /**
      * 重新创建所有Activity
      * 从栈底开始，保持重建后堆栈顺序一致
+     * recreate的Activity不会走onStop，当恢复的时候自然也不会走onStart
      *
      * @param excludeClasses 排除activityClass
      * @see Activity#recreate()
      */
     public void recreateAll(Class<?>... excludeClasses) {
         List<Class<?>> excludeClassList = Arrays.asList(excludeClasses);
-        Iterator<Activity> iterator = arrayDeque.descendingIterator();
-        while (iterator.hasNext()) {
-            Activity activity = iterator.next();
-            if (excludeClassList.contains(activity.getClass())) {
-                continue;
+        synchronized (LOCK) {
+            Iterator<Activity> iterator = arrayDeque.descendingIterator();
+            while (iterator.hasNext()) {
+                Activity activity = iterator.next();
+                if (excludeClassList.contains(activity.getClass())) {
+                    continue;
+                }
+                iterator.remove();
+                activity.recreate();
             }
-            iterator.remove();
-            activity.recreate();
         }
     }
 
@@ -187,12 +200,14 @@ public class ActivityDeque implements Application.ActivityLifecycleCallbacks {
      * @see Activity#finish()
      */
     public void finishActivity(Class<?> cls) {
-        Iterator<Activity> iterator = arrayDeque.iterator();
-        while (iterator.hasNext()) {
-            Activity activity = iterator.next();
-            if (activity.getClass().equals(cls)) {
-                iterator.remove();
-                activity.finish();
+        synchronized (LOCK) {
+            Iterator<Activity> iterator = arrayDeque.iterator();
+            while (iterator.hasNext()) {
+                Activity activity = iterator.next();
+                if (activity.getClass().equals(cls)) {
+                    iterator.remove();
+                    activity.finish();
+                }
             }
         }
     }
@@ -204,11 +219,13 @@ public class ActivityDeque implements Application.ActivityLifecycleCallbacks {
      * @see Activity#finish()
      */
     public void finishAll() {
-        Iterator<Activity> iterator = arrayDeque.iterator();
-        while (iterator.hasNext()) {
-            Activity activity = iterator.next();
-            iterator.remove();
-            activity.finish();
+        synchronized (LOCK) {
+            Iterator<Activity> iterator = arrayDeque.iterator();
+            while (iterator.hasNext()) {
+                Activity activity = iterator.next();
+                iterator.remove();
+                activity.finish();
+            }
         }
     }
 
@@ -221,56 +238,73 @@ public class ActivityDeque implements Application.ActivityLifecycleCallbacks {
      */
     public void finishAll(Class<?>... excludeClasses) {
         List<Class<?>> excludeClassList = Arrays.asList(excludeClasses);
-        Iterator<Activity> iterator = arrayDeque.iterator();
-        while (iterator.hasNext()) {
-            Activity activity = iterator.next();
-            if (excludeClassList.contains(activity.getClass())) {
-                continue;
+        synchronized (LOCK) {
+            Iterator<Activity> iterator = arrayDeque.iterator();
+            while (iterator.hasNext()) {
+                Activity activity = iterator.next();
+                if (excludeClassList.contains(activity.getClass())) {
+                    continue;
+                }
+                iterator.remove();
+                activity.finish();
             }
-            iterator.remove();
-            activity.finish();
         }
+    }
+
+    /**
+     * 释放资源
+     */
+    public void release() {
+        application.unregisterActivityLifecycleCallbacks(activityLifecycleCallback);
+        application = null;
+        activityLifecycleCallback = null;
+        activityDequeDelegate = null;
+        arrayDeque.clear();
+        arrayDeque = null;
+        currentActivityWeakReference = null;
     }
 
     ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-    @Override
-    public void onActivityCreated(Activity activity, Bundle savedInstanceState) {
-        activity = activityDequeDelegate.onActivityCreated(activity, savedInstanceState);
-        if (activity != null) {
-            arrayDeque.addFirst(activity);
+    private class ActivityLifecycleCallback implements Application.ActivityLifecycleCallbacks {
+        @Override
+        public void onActivityCreated(Activity activity, Bundle savedInstanceState) {
+            activity = activityDequeDelegate.onActivityCreated(activity, savedInstanceState);
+            if (activity != null) {
+                arrayDeque.addFirst(activity);
+            }
         }
-    }
 
-    @Override
-    public void onActivityStarted(Activity activity) {
-    }
-
-    @Override
-    public void onActivityResumed(Activity activity) {
-        currentActivityWeakReference = new WeakReference<>(activity);
-    }
-
-    @Override
-    public void onActivityPaused(Activity activity) {
-        if (activity == getCurrentActivity()) {
-            currentActivityWeakReference = null;
+        @Override
+        public void onActivityStarted(Activity activity) {
         }
-    }
 
-    @Override
-    public void onActivityStopped(Activity activity) {
-    }
+        @Override
+        public void onActivityResumed(Activity activity) {
+            currentActivityWeakReference = new WeakReference<>(activity);
+        }
 
-    @Override
-    public void onActivitySaveInstanceState(Activity activity, Bundle outState) {
-    }
+        @Override
+        public void onActivityPaused(Activity activity) {
+            if (activity == getCurrentActivity()) {
+                currentActivityWeakReference = null;
+            }
+        }
 
-    @Override
-    public void onActivityDestroyed(Activity activity) {
-        activity = activityDequeDelegate.onActivityDestroyed(activity);
-        if (activity != null) {
-            arrayDeque.remove(activity);
+        @Override
+        public void onActivityStopped(Activity activity) {
+        }
+
+        @Override
+        public void onActivitySaveInstanceState(Activity activity, Bundle outState) {
+        }
+
+        @Override
+        public void onActivityDestroyed(Activity activity) {
+            activity = activityDequeDelegate.onActivityDestroyed(activity);
+            if (activity != null) {
+                arrayDeque.remove(activity);
+            }
         }
     }
 }
