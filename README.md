@@ -6,7 +6,7 @@
 ## Installation
 
 ```groovy
-implementation 'com.zyhang:ActivityDeque:<latest-version>'
+implementation 'com.zyhang:activitydeque:<latest-version>'
 ```
 
 ## License
